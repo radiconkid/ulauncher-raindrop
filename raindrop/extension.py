@@ -1,4 +1,8 @@
 import logging
+import os
+import hashlib
+import requests
+from pathlib import Path
 
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.shared.event import KeywordQueryEvent, PreferencesEvent, PreferencesUpdateEvent
@@ -29,6 +33,36 @@ def get_favicon_url(drop):
         return f"https://www.google.com/s2/favicons?domain={drop.domain}"
     
     return None
+
+
+def get_favicon_path(drop, cache_dir="favicon_cache"):
+    """Get local path for favicon, downloading if necessary"""
+    favicon_url = get_favicon_url(drop)
+    if not favicon_url:
+        return "images/icon.png"
+    
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+    
+    # Generate filename from URL hash
+    url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
+    cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+    
+    # Return cached file if it exists
+    if os.path.exists(cache_path):
+        return cache_path
+    
+    # Download favicon
+    try:
+        response = requests.get(favicon_url, timeout=5)
+        if response.status_code == 200:
+            with open(cache_path, 'wb') as f:
+                f.write(response.content)
+            return cache_path
+    except Exception as e:
+        logger.error(f"Failed to download favicon: {e}")
+    
+    return "images/icon.png"
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +113,7 @@ class RaindropExtension(Extension):
 
         items = []
         for drop in drops:
-            favicon_url = get_favicon_url(drop)
-            icon_path = favicon_url if favicon_url else 'images/icon.png'
+            icon_path = get_favicon_path(drop)
             items.append(
                 ExtensionResultItem(icon=icon_path,
                                     name=drop.title,
@@ -106,8 +139,7 @@ class RaindropExtension(Extension):
 
         items = []
         for drop in drops:
-            favicon_url = get_favicon_url(drop)
-            icon_path = favicon_url if favicon_url else 'images/icon.png'
+            icon_path = get_favicon_path(drop)
             items.append(
                 ExtensionResultItem(icon=icon_path,
                                     name=drop.title,
