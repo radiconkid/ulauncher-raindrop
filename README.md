@@ -87,6 +87,10 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.3.2
+- Updated tag search parameter and increased results
+- Bug fixes and stability improvements
+
 ### v1.3.1
 - Fixed tag search parameter name (tags → tag)
 - Increased tag search results to 100 items

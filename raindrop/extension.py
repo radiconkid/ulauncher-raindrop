@@ -205,8 +205,8 @@ class RaindropExtension(Extension):
             from raindropio import Raindrop, CollectionRef
             drops = Raindrop.search(
                 self.rd_client,
-                tags=[tag],
-                perpage=10,
+                tag=tag,
+                perpage=100,
                 collection=CollectionRef({"$id": 0}),
             )
 
