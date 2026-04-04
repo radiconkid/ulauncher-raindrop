@@ -52,7 +52,7 @@ class RaindropExtension(Extension):
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
-                    name='No results found matcing your criteria',
+                    name='No results found matching your criteria',
                     highlightable=False)
             ])
 
@@ -77,7 +77,7 @@ class RaindropExtension(Extension):
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
-                    name='No results found matcing your criteria',
+                    name='No results found matching your criteria',
                     highlightable=False)
             ])
 
