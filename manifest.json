@@ -3,7 +3,7 @@
   "name": "Raindrop",
   "description": "Search your Raindrop bookmarks",
   "developer_name": "Bruno Paz",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "icon": "images/icon.png",
   "options": {
     "query_debounce": 0.2
@@ -31,6 +31,12 @@
       "id": "access_token",
       "type": "input",
       "name": "Raindrop Access Token"
+    },
+    {
+      "id": "show_favicons",
+      "type": "checkbox",
+      "name": "Show Favicons (requires restart)",
+      "default_value": true
     }
   ]
 }

@@ -12,6 +12,7 @@
 * Open a selected bookmark in the default browser
 * Open `https://app.raindrop.io` using the `rdopen` keyword
 * Display favicons for bookmarks when available (favicons are cached locally)
+* Toggle favicon display on/off in extension settings (requires restart)
 
 ![demo](demo.gif)
 
@@ -91,6 +92,7 @@ style="height: auto !important;width: auto !important;" ></a>
 - Access token is now properly read from preferences
 - Improved error handling for missing access token
 - rd_client is initialized on first use
+- Added option to toggle favicon display (enabled by default)
 
 ### v1.2.0
 - Added favicon caching for bookmarks

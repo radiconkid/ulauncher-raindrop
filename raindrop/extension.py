@@ -158,8 +158,12 @@ class RaindropExtension(Extension):
             ])
 
         items = []
+        # Get favicon setting from preferences
+        show_favicons = self.preferences.get('show_favicons', True)
+        
         for drop in drops:
-            icon_path = get_favicon_path(drop)
+            # Use favicon if enabled, otherwise use default icon
+            icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
             items.append(
                 ExtensionResultItem(icon=icon_path,
                                     name=drop.title,
@@ -202,8 +206,12 @@ class RaindropExtension(Extension):
             ])
 
         items = []
+        # Get favicon setting from preferences
+        show_favicons = self.preferences.get('show_favicons', True)
+        
         for drop in drops:
-            icon_path = get_favicon_path(drop)
+            # Use favicon if enabled, otherwise use default icon
+            icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
             items.append(
                 ExtensionResultItem(icon=icon_path,
                                     name=drop.title,
