@@ -87,6 +87,13 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.3.0
+- Added tag search functionality with `rd:tag` keyword
+- Search bookmarks by exact tag match
+- Returns up to 100 results per search
+- Respects favicon display setting
+- Shows appropriate error messages when no tags found
+
 ### v1.2.2
 - Added option to toggle favicon display (enabled by default)
 - Favicon setting is respected in search and unsorted methods
