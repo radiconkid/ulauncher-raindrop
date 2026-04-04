@@ -11,6 +11,7 @@
 * Search on your entire collection of Bookmarks.
 * Open a selected bookmark in the default browser
 * Open `https://app.raindrop.io` using the `rdopen` keyword
+* Display favicons for bookmarks when available (favicons are cached locally)
 
 ![demo](demo.gif)
 
@@ -83,6 +84,23 @@ Or if you prefer a one time donation to the project, you can simple:
 style="height: auto !important;width: auto !important;" ></a>
 
 ---
+## Changelog
+
+### v1.2.0
+- Added favicon caching for bookmarks
+- Favicons are now displayed for each bookmark in search results
+- Favicons are cached locally in `favicon_cache/` directory
+- Improved favicon retrieval with fallback to Google favicon service
+
+### v1.1.0
+- Fixed typo in extension.py
+- Updated version to 1.1.0
+
+### v1.0.0
+- Initial release
+- Basic Raindrop bookmark search functionality
+- Support for all collections and unsorted bookmarks
+
 ## License
 
 MIT &copy; Bruno Paz

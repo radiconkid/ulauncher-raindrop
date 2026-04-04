@@ -36,32 +36,57 @@ def get_favicon_url(drop):
 
 
 def get_favicon_path(drop, cache_dir="favicon_cache"):
-    """Get local path for favicon, downloading if necessary"""
-    favicon_url = get_favicon_url(drop)
-    if not favicon_url:
-        return "images/icon.png"
+    """Get local path for favicon, using simple approach"""
+    # For now, just use Google's favicon service for all sites
+    # This is the simplest approach that should work for most sites
     
-    # Create cache directory if it doesn't exist
-    Path(cache_dir).mkdir(exist_ok=True)
+    domain = None
     
-    # Generate filename from URL hash
-    url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
-    cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+    # Try to get domain from drop.domain
+    if hasattr(drop, 'domain') and drop.domain:
+        domain = drop.domain
     
-    # Return cached file if it exists
-    if os.path.exists(cache_path):
-        return cache_path
+    # Try to get domain from drop.link if domain not found
+    if not domain and hasattr(drop, 'link') and drop.link:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(drop.link)
+            domain = parsed.netloc
+        except:
+            pass
     
-    # Download favicon
-    try:
-        response = requests.get(favicon_url, timeout=5)
-        if response.status_code == 200:
-            with open(cache_path, 'wb') as f:
-                f.write(response.content)
+    # If we have a domain, try to get favicon
+    if domain:
+        favicon_url = f"https://www.google.com/s2/favicons?domain={domain}"
+        
+        # Create cache directory if it doesn't exist
+        import os
+        from pathlib import Path
+        extension_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cache_dir = os.path.join(extension_base_dir, cache_dir)
+        Path(cache_dir).mkdir(exist_ok=True)
+        
+        # Generate filename from URL hash
+        import hashlib
+        url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
+        cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+        
+        # Return cached file if it exists
+        if os.path.exists(cache_path):
             return cache_path
-    except Exception as e:
-        logger.error(f"Failed to download favicon: {e}")
+        
+        # Try to download favicon (simple approach)
+        try:
+            import requests
+            response = requests.get(favicon_url, timeout=3)
+            if response.status_code == 200:
+                with open(cache_path, 'wb') as f:
+                    f.write(response.content)
+                return cache_path
+        except:
+            pass  # Silently fail and use default icon
     
+    # Use default icon if favicon not available
     return "images/icon.png"
 
 logger = logging.getLogger(__name__)
