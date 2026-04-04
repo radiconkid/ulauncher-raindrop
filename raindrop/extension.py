@@ -186,6 +186,20 @@ class RaindropExtension(Extension):
         
         # Initialize search cache
         self.search_cache = SearchCache()
+        
+        # Load version from manifest.json
+        self._load_version()
+    
+    def _load_version(self):
+        """Load version from manifest.json"""
+        try:
+            import json
+            manifest_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'manifest.json')
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+                self.version = manifest.get('version', 'unknown')
+        except:
+            self.version = 'unknown'
 
     def get_keyword_id(self, keyword):
         for key, value in self.preferences.items():
@@ -200,7 +214,12 @@ class RaindropExtension(Extension):
             ExtensionResultItem(
                 icon='images/icon.png',
                 name='Open Raindrop Website',
-                on_enter=OpenUrlAction('https://app.raindrop.io'))
+                on_enter=OpenUrlAction('https://app.raindrop.io')),
+            ExtensionResultItem(
+                icon='images/icon.png',
+                name=f'Raindrop Extension v{self.version}',
+                description='Current extension version',
+                highlightable=False)
         ])
 
     def search(self, query):
