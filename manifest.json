@@ -42,7 +42,7 @@
       "id": "kw_tag",
       "type": "keyword",
       "name": "Raindrop: Search by Tag",
-      "default_value": "rdtag"
+      "default_value": "rd:tag"
     }
   ]
 }
