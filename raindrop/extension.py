@@ -2,7 +2,9 @@ import logging
 import os
 import hashlib
 import requests
+import time
 from pathlib import Path
+from datetime import datetime, timedelta
 
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.shared.event import KeywordQueryEvent, PreferencesEvent, PreferencesUpdateEvent
@@ -12,6 +14,81 @@ from ulauncher.api.shared.action.OpenUrlAction import OpenUrlAction
 from raindrop.preferences import PreferencesEventListener, PreferencesUpdateEventListener
 from raindropio import Raindrop, CollectionRef
 from raindrop.query_listener import KeywordQueryEventListener
+
+
+class SearchCache:
+    """Cache class for storing search results"""
+    
+    def __init__(self, cache_dir="search_cache", ttl_minutes=5):
+        self.cache_dir = cache_dir
+        self.ttl = timedelta(minutes=ttl_minutes)
+        
+        # Create cache directory if it doesn't exist
+        extension_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.cache_dir = os.path.join(extension_base_dir, self.cache_dir)
+        Path(self.cache_dir).mkdir(exist_ok=True)
+    
+    def _get_cache_key(self, query_type, query):
+        """Generate cache key from query type and query"""
+        key = f"{query_type}:{query}"
+        return hashlib.md5(key.encode()).hexdigest()
+    
+    def _get_cache_path(self, cache_key):
+        """Get full path for cache file"""
+        return os.path.join(self.cache_dir, f"{cache_key}.cache")
+    
+    def get(self, query_type, query):
+        """Get cached results if available and not expired"""
+        cache_key = self._get_cache_key(query_type, query)
+        cache_path = self._get_cache_path(cache_key)
+        
+        if not os.path.exists(cache_path):
+            return None
+        
+        try:
+            # Read cache file
+            with open(cache_path, 'rb') as f:
+                import pickle
+                cached_data = pickle.load(f)
+                
+            # Check if cache is expired
+            cache_time = cached_data.get('timestamp')
+            if cache_time and (datetime.now() - cache_time) > self.ttl:
+                os.remove(cache_path)
+                return None
+            
+            return cached_data.get('results')
+        except:
+            # If any error occurs, remove cache file and return None
+            if os.path.exists(cache_path):
+                os.remove(cache_path)
+            return None
+    
+    def set(self, query_type, query, results):
+        """Store results in cache"""
+        cache_key = self._get_cache_key(query_type, query)
+        cache_path = self._get_cache_path(cache_key)
+        
+        try:
+            cached_data = {
+                'timestamp': datetime.now(),
+                'results': results
+            }
+            
+            with open(cache_path, 'wb') as f:
+                import pickle
+                pickle.dump(cached_data, f)
+        except:
+            # Silently fail if caching fails
+            pass
+    
+    def clear(self):
+        """Clear all cached results"""
+        try:
+            for cache_file in Path(self.cache_dir).glob("*.cache"):
+                cache_file.unlink()
+        except:
+            pass
 
 
 def get_favicon_url(drop):
@@ -106,6 +183,9 @@ class RaindropExtension(Extension):
         
         # Initialize rd_client as None, will be set in PreferencesEventListener
         self.rd_client = None
+        
+        # Initialize search cache
+        self.search_cache = SearchCache()
 
     def get_keyword_id(self, keyword):
         for key, value in self.preferences.items():
@@ -124,6 +204,13 @@ class RaindropExtension(Extension):
         ])
 
     def search(self, query):
+        # Try to get cached results first
+        cache_key = f"search:{query}"
+        cached_results = self.search_cache.get("search", query)
+        
+        if cached_results is not None:
+            return RenderResultListAction(cached_results)
+        
         # Get access token from preferences
         access_token = self.preferences.get('access_token')
         
@@ -142,37 +229,55 @@ class RaindropExtension(Extension):
             self.rd_client = API(access_token)
             self._last_token = access_token
         
-        drops = Raindrop.search(
-            self.rd_client,
-            word=query,
-            perpage=10,
-            collection=CollectionRef({"$id": 0}),
-        )
+        try:
+            drops = Raindrop.search(
+                self.rd_client,
+                word=query,
+                perpage=10,
+                collection=CollectionRef({"$id": 0}),
+            )
 
-        if len(drops) == 0:
+            if len(drops) == 0:
+                return RenderResultListAction([
+                    ExtensionResultItem(
+                        icon='images/icon.png',
+                        name='No results found matching your criteria',
+                        highlightable=False)
+                ])
+
+            items = []
+            # Get favicon setting from preferences
+            show_favicons = self.preferences.get('show_favicons', True)
+            
+            for drop in drops:
+                # Use favicon if enabled, otherwise use default icon
+                icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
+                items.append(
+                    ExtensionResultItem(icon=icon_path,
+                                        name=drop.title,
+                                        description=drop.excerpt,
+                                        on_enter=OpenUrlAction(drop.link)))
+            
+            # Cache the results
+            self.search_cache.set("search", query, items)
+            
+            return RenderResultListAction(items)
+        except Exception as e:
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
-                    name='No results found matching your criteria',
+                    name=f'Error searching: {str(e)}',
                     highlightable=False)
             ])
 
-        items = []
-        # Get favicon setting from preferences
-        show_favicons = self.preferences.get('show_favicons', True)
-        
-        for drop in drops:
-            # Use favicon if enabled, otherwise use default icon
-            icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
-            items.append(
-                ExtensionResultItem(icon=icon_path,
-                                    name=drop.title,
-                                    description=drop.excerpt,
-                                    on_enter=OpenUrlAction(drop.link)))
-        return RenderResultListAction(items)
-
     def search_by_tag(self, tag):
         """ Search bookmarks by tag """
+        # Try to get cached results first
+        cached_results = self.search_cache.get("tag", tag)
+        
+        if cached_results is not None:
+            return RenderResultListAction(cached_results)
+        
         # Get access token from preferences
         access_token = self.preferences.get('access_token')
         
@@ -230,6 +335,10 @@ class RaindropExtension(Extension):
                                         name=drop.title,
                                         description=drop.excerpt,
                                         on_enter=OpenUrlAction(drop.link)))
+            
+            # Cache the results
+            self.search_cache.set("tag", tag, items)
+            
             return RenderResultListAction(items)
             
         except Exception as e:

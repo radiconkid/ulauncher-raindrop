@@ -87,6 +87,13 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.3.5
+- Added search result caching for improved performance
+- Reduced API requests by caching search and tag search results
+- Cache expires after 5 minutes for fresh data
+- Significant performance improvement for repeated searches
+- Bug fixes and stability improvements
+
 ### v1.3.4
 - Updated to Ulauncher API v3.0
 - Improved compatibility with latest Ulauncher versions
