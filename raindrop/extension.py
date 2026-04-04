@@ -171,6 +171,75 @@ class RaindropExtension(Extension):
                                     on_enter=OpenUrlAction(drop.link)))
         return RenderResultListAction(items)
 
+    def search_by_tag(self, tag):
+        """ Search bookmarks by tag """
+        # Get access token from preferences
+        access_token = self.preferences.get('access_token')
+        
+        # Check if access token is available
+        if not access_token:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name='Raindrop access token not set. Please configure the extension.',
+                    highlightable=False)
+            ])
+        
+        # Check if tag is provided
+        if not tag:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name='Please provide a tag to search for',
+                    highlightable=False)
+            ])
+        
+        # Initialize or update rd_client if needed
+        if not self.rd_client or (hasattr(self, '_last_token') and self._last_token != access_token):
+            from raindropio import API
+            self.rd_client = API(access_token)
+            self._last_token = access_token
+        
+        # Search by tag using Raindrop API
+        try:
+            from raindropio import Raindrop, CollectionRef
+            drops = Raindrop.search(
+                self.rd_client,
+                tags=[tag],
+                perpage=10,
+                collection=CollectionRef({"$id": 0}),
+            )
+
+            if len(drops) == 0:
+                return RenderResultListAction([
+                    ExtensionResultItem(
+                        icon='images/icon.png',
+                        name=f'No bookmarks found with tag: {tag}',
+                        highlightable=False)
+                ])
+
+            items = []
+            # Get favicon setting from preferences
+            show_favicons = self.preferences.get('show_favicons', True)
+            
+            for drop in drops:
+                # Use favicon if enabled, otherwise use default icon
+                icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
+                items.append(
+                    ExtensionResultItem(icon=icon_path,
+                                        name=drop.title,
+                                        description=drop.excerpt,
+                                        on_enter=OpenUrlAction(drop.link)))
+            return RenderResultListAction(items)
+            
+        except Exception as e:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name=f'Error searching by tag: {str(e)}',
+                    highlightable=False)
+            ])
+
     def unsorted(self, query):
         # Get access token from preferences
         access_token = self.preferences.get('access_token')

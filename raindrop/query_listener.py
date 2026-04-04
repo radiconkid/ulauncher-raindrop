@@ -15,4 +15,7 @@ class KeywordQueryEventListener(EventListener):
         if kw_id == 'kw_unsorted':
             return extension.unsorted(query)
 
+        if kw_id == 'kw_tag':
+            return extension.search_by_tag(query)
+
         return extension.search(query)

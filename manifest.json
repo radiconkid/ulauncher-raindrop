@@ -37,6 +37,12 @@
       "type": "checkbox",
       "name": "Show Favicons (requires restart)",
       "default_value": true
+    },
+    {
+      "id": "kw_tag",
+      "type": "keyword",
+      "name": "Raindrop: Search by Tag",
+      "default_value": "rdtag"
     }
   ]
 }
