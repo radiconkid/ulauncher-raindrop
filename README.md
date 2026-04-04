@@ -87,12 +87,17 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.2.2
+- Added option to toggle favicon display (enabled by default)
+- Favicon setting is respected in search and unsorted methods
+- Favicon cache is cleared when display is disabled
+- Setting requires restart to take effect
+
 ### v1.2.1
 - Fixed access token initialization issue
 - Access token is now properly read from preferences
 - Improved error handling for missing access token
 - rd_client is initialized on first use
-- Added option to toggle favicon display (enabled by default)
 
 ### v1.2.0
 - Added favicon caching for bookmarks
