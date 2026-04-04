@@ -86,6 +86,12 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.2.1
+- Fixed access token initialization issue
+- Access token is now properly read from preferences
+- Improved error handling for missing access token
+- rd_client is initialized on first use
+
 ### v1.2.0
 - Added favicon caching for bookmarks
 - Favicons are now displayed for each bookmark in search results

@@ -103,6 +103,9 @@ class RaindropExtension(Extension):
         self.subscribe(PreferencesEvent, PreferencesEventListener())
         self.subscribe(PreferencesUpdateEvent,
                        PreferencesUpdateEventListener())
+        
+        # Initialize rd_client as None, will be set in PreferencesEventListener
+        self.rd_client = None
 
     def get_keyword_id(self, keyword):
         for key, value in self.preferences.items():
@@ -121,6 +124,24 @@ class RaindropExtension(Extension):
         ])
 
     def search(self, query):
+        # Get access token from preferences
+        access_token = self.preferences.get('access_token')
+        
+        # Check if access token is available
+        if not access_token:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name='Raindrop access token not set. Please configure the extension.',
+                    highlightable=False)
+            ])
+        
+        # Initialize or update rd_client if needed
+        if not self.rd_client or (hasattr(self, '_last_token') and self._last_token != access_token):
+            from raindropio import API
+            self.rd_client = API(access_token)
+            self._last_token = access_token
+        
         drops = Raindrop.search(
             self.rd_client,
             word=query,
@@ -147,6 +168,24 @@ class RaindropExtension(Extension):
         return RenderResultListAction(items)
 
     def unsorted(self, query):
+        # Get access token from preferences
+        access_token = self.preferences.get('access_token')
+        
+        # Check if access token is available
+        if not access_token:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name='Raindrop access token not set. Please configure the extension.',
+                    highlightable=False)
+            ])
+        
+        # Initialize or update rd_client if needed
+        if not self.rd_client or (hasattr(self, '_last_token') and self._last_token != access_token):
+            from raindropio import API
+            self.rd_client = API(access_token)
+            self._last_token = access_token
+        
         drops = Raindrop.search(
             self.rd_client,
             word=query,
