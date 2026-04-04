@@ -3,7 +3,7 @@
   "name": "Raindrop",
   "description": "Search your Raindrop bookmarks",
   "developer_name": "Bruno Paz",
-  "version": "1.2.2",
+  "version": "1.3.1",
   "icon": "images/icon.png",
   "options": {
     "query_debounce": 0.2

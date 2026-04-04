@@ -87,6 +87,12 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.3.1
+- Fixed tag search parameter name (tags → tag)
+- Increased tag search results to 100 items
+- Improved error handling for tag search
+- Bug fixes and stability improvements
+
 ### v1.3.0
 - Added tag search functionality with `rd:tag` keyword
 - Search bookmarks by exact tag match
