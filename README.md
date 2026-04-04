@@ -87,6 +87,11 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.3.3
+- Changed tag search keyword from rdtag to rd:tag
+- Reordered preferences to group related keywords
+- Bug fixes and stability improvements
+
 ### v1.3.2
 - Updated tag search parameter and increased results
 - Bug fixes and stability improvements
