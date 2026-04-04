@@ -9,6 +9,27 @@ from raindrop.preferences import PreferencesEventListener, PreferencesUpdateEven
 from raindropio import Raindrop, CollectionRef
 from raindrop.query_listener import KeywordQueryEventListener
 
+
+def get_favicon_url(drop):
+    """Extract favicon URL from Raindrop object"""
+    if not drop or not hasattr(drop, 'media'):
+        return None
+    
+    if drop.media:
+        # Look for favicon in media array
+        for media in drop.media:
+            if media.get('type') == 'image/favicon':
+                return media.get('link')
+            # Sometimes favicon might be in 'image/png' or other image types
+            if media.get('type') and media.get('type').startswith('image/'):
+                return media.get('link')
+    
+    # If no favicon found in media, try to construct from domain
+    if hasattr(drop, 'domain') and drop.domain:
+        return f"https://www.google.com/s2/favicons?domain={drop.domain}"
+    
+    return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,8 +79,10 @@ class RaindropExtension(Extension):
 
         items = []
         for drop in drops:
+            favicon_url = get_favicon_url(drop)
+            icon_path = favicon_url if favicon_url else 'images/icon.png'
             items.append(
-                ExtensionResultItem(icon='images/icon.png',
+                ExtensionResultItem(icon=icon_path,
                                     name=drop.title,
                                     description=drop.excerpt,
                                     on_enter=OpenUrlAction(drop.link)))
@@ -83,8 +106,10 @@ class RaindropExtension(Extension):
 
         items = []
         for drop in drops:
+            favicon_url = get_favicon_url(drop)
+            icon_path = favicon_url if favicon_url else 'images/icon.png'
             items.append(
-                ExtensionResultItem(icon='images/icon.png',
+                ExtensionResultItem(icon=icon_path,
                                     name=drop.title,
                                     description=drop.excerpt,
                                     on_enter=OpenUrlAction(drop.link)))
