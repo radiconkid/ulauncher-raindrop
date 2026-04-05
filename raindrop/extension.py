@@ -33,6 +33,11 @@ class SearchCache:
             'hits': 0,
             'misses': 0
         }
+        
+        # Add dynamic TTL adjustment
+        self.dynamic_ttl_enabled = True
+        self.min_ttl = timedelta(minutes=1)
+        self.max_ttl = timedelta(minutes=30)
     
     def _get_cache_key(self, query_type, query):
         """Generate cache key from query type and query"""
@@ -109,6 +114,24 @@ class SearchCache:
     def get_stats(self):
         """Get cache statistics"""
         return self.stats
+    
+    def adjust_ttl(self):
+        """Adjust TTL based on cache hit/miss ratio"""
+        if not self.dynamic_ttl_enabled:
+            return
+        
+        total = self.stats['hits'] + self.stats['misses']
+        if total == 0:
+            return
+        
+        hit_ratio = self.stats['hits'] / total
+        
+        # If hit ratio is high, increase TTL
+        if hit_ratio > 0.8:
+            self.ttl = min(self.ttl * 2, self.max_ttl)
+        # If hit ratio is low, decrease TTL
+        elif hit_ratio < 0.2:
+            self.ttl = max(self.ttl / 2, self.min_ttl)
 
 
 def get_favicon_url(drop):
@@ -264,6 +287,7 @@ class RaindropExtension(Extension):
         """ Shows the menu to Open Raindrop website """
         cache_stats = self.search_cache.get_stats()
         cache_info = f"Cache: {cache_stats['hits']} hits, {cache_stats['misses']} misses"
+        ttl_info = f"Cache TTL: {int(self.search_cache.ttl.total_seconds / 60)} minutes"
         
         return RenderResultListAction([
             ExtensionResultItem(
@@ -279,6 +303,11 @@ class RaindropExtension(Extension):
                 icon='images/icon.png',
                 name='Cache Statistics',
                 description=cache_info,
+                highlightable=False),
+            ExtensionResultItem(
+                icon='images/icon.png',
+                name='Cache TTL',
+                description=ttl_info,
                 highlightable=False)
         ])
 
@@ -340,12 +369,24 @@ class RaindropExtension(Extension):
             # Cache the results
             self.search_cache.set("search", query, items)
             
+            # Adjust TTL based on cache hit/miss ratio
+            self.search_cache.adjust_ttl()
+            
             return RenderResultListAction(items)
+        except requests.exceptions.RequestException as e:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name=f'Network error: {str(e)}',
+                    description='Please check your internet connection',
+                    highlightable=False)
+            ])
         except Exception as e:
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
                     name=f'Error searching: {str(e)}',
+                    description='An unexpected error occurred',
                     highlightable=False)
             ])
 
@@ -423,13 +464,25 @@ class RaindropExtension(Extension):
             # Cache the results
             self.search_cache.set("tag", tag, items)
             
+            # Adjust TTL based on cache hit/miss ratio
+            self.search_cache.adjust_ttl()
+            
             return RenderResultListAction(items)
             
+        except requests.exceptions.RequestException as e:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name=f'Network error: {str(e)}',
+                    description='Please check your internet connection',
+                    highlightable=False)
+            ])
         except Exception as e:
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
                     name=f'Error searching by tag: {str(e)}',
+                    description='An unexpected error occurred',
                     highlightable=False)
             ])
 
@@ -461,27 +514,44 @@ class RaindropExtension(Extension):
                 collection=CollectionRef({"$id": -1}),
             )
         
-        search_func = with_timeout(3)(_search_with_timeout)  # Optimized timeout: 3 seconds
-        drops = search_func()
+        try:
+            search_func = with_timeout(3)(_search_with_timeout)  # Optimized timeout: 3 seconds
+            drops = search_func()
 
-        if len(drops) == 0:
+            if len(drops) == 0:
+                return RenderResultListAction([
+                    ExtensionResultItem(
+                        icon='images/icon.png',
+                        name='No results found matching your criteria',
+                        highlightable=False)
+                ])
+
+            items = []
+            # Get favicon setting from preferences
+            show_favicons = self.preferences.get('show_favicons', True)
+            
+            for drop in drops:
+                # Use favicon if enabled, otherwise use default icon
+                icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
+                items.append(
+                    ExtensionResultItem(icon=icon_path,
+                                        name=drop.title,
+                                        description=drop.excerpt,
+                                        on_enter=OpenUrlAction(drop.link)))
+            return RenderResultListAction(items)
+        except requests.exceptions.RequestException as e:
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon='images/icon.png',
-                    name='No results found matching your criteria',
+                    name=f'Network error: {str(e)}',
+                    description='Please check your internet connection',
                     highlightable=False)
             ])
-
-        items = []
-        # Get favicon setting from preferences
-        show_favicons = self.preferences.get('show_favicons', True)
-        
-        for drop in drops:
-            # Use favicon if enabled, otherwise use default icon
-            icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
-            items.append(
-                ExtensionResultItem(icon=icon_path,
-                                    name=drop.title,
-                                    description=drop.excerpt,
-                                    on_enter=OpenUrlAction(drop.link)))
-        return RenderResultListAction(items)
+        except Exception as e:
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon='images/icon.png',
+                    name=f'Error searching: {str(e)}',
+                    description='An unexpected error occurred',
+                    highlightable=False)
+            ])
