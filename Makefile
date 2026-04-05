@@ -1,5 +1,5 @@
 
-EXT_NAME:=com.github.brpaz.ulauncher-raindrop
+EXT_NAME:=com.github.radiconkid.ulauncher-raindrop
 EXT_DIR:=$(shell pwd)
 
 .PHONY: help lint format link unlink deps dev setup

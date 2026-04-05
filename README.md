@@ -3,9 +3,9 @@
 > Search in your [Raindrop](https://raindrop.io/) bookmarks directly from [Ulauncher](https://ulauncher.io/).
 
 [![Ulauncher Extension](https://img.shields.io/badge/Ulauncher-Extension-yellowgreen.svg?style=for-the-badge)](https://ext.ulauncher.io/)
-[![Version](https://img.shields.io/badge/Version-1.4.2-blue.svg?style=for-the-badge)](https://github.com/brpaz/ulauncher-raindrop)
-[![CI Status](https://img.shields.io/github/workflow/status/brpaz/ulauncher-raindrop/CI?color=orange&label=actions&logo=github&logoColor=orange&style=for-the-badge)](https://github.com/brpaz/ulauncher-raindrop)
-[![License](https://img.shields.io/github/license/brpaz/ulauncher-raindrop.svg?style=for-the-badge)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-1.4.2-blue.svg?style=for-the-badge)](https://github.com/radiconkid/ulauncher-raindrop)
+[![CI Status](https://img.shields.io/github/workflow/status/radiconkid/ulauncher-raindrop/CI?color=orange&label=actions&logo=github&logoColor=orange&style=for-the-badge)](https://github.com/radiconkid/ulauncher-raindrop)
+[![License](https://img.shields.io/github/license/radiconkid/ulauncher-raindrop.svg?style=for-the-badge)](LICENSE)
 
 ## Features
 
@@ -28,7 +28,7 @@
 Open ulauncher preferences window -> extensions -> add extension and paste the following url:
 
 ```
-https://github.com/brpaz/ulauncher-raindrop
+https://github.com/radiconkid/ulauncher-raindrop
 ```
 
 ## Usage
@@ -52,7 +52,7 @@ The following keywords are specified by this extension:
 ## Development
 
 ```
-git clone https://github.com/brpaz/ulauncher-raindrop
+git clone https://github.com/radiconkid/ulauncher-raindrop
 make link
 ```
 
@@ -76,9 +76,9 @@ If this project was useful to you in some form, I would be glad to have your sup
 
 The sinplest form of support is to give a ⭐️ to this repo.
 
-You can also contribute with [GitHub Sponsors](https://github.com/sponsors/brpaz).
+You can also contribute with [GitHub Sponsors](https://github.com/sponsors/radiconkid).
 
-[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor%20Me-red?style=for-the-badge)](https://github.com/sponsors/brpaz)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor%20Me-red?style=for-the-badge)](https://github.com/sponsors/radiconkid)
 
 Or if you prefer a one time donation to the project, you can simple:
 
