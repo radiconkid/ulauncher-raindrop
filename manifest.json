@@ -1,11 +1,11 @@
 {
   "api_version": "3.0",
-  "name": "Raindrop v2.1.0",
+  "name": "Raindrop v2.2.0",
   "authors": "Bruno Paz",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "icon": "images/icon.png",
   "instructions": "This extension requires a Raindrop.io account. Create an access token at https://app.raindrop.io/settings/integrations and set it in the extension preferences.",
-  "input_debounce": 0.2,
+  "input_debounce": 0.4,
   "triggers": {
     "kw_open": {
       "name": "Raindrop: Open In browser",
