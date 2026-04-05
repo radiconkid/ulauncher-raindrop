@@ -1,0 +1,23 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.4.2] - 2024-04-05
+### Added
+- Added `favicon_cache/` and `search_cache/` to `.gitignore` to exclude cache directories from version control.
+
+## [1.4.1] - 2024-04-04
+### Changed
+- Optimized API timeout from 5s to 3s for better responsiveness.
+
+## [1.4.0] - 2024-04-04
+### Added
+- Enhanced caching system for improved performance.
+- Display extension version in rdopen menu.
+
+## [1.3.5] - 2024-03-28
+### Added
+- Initial release of the enhanced caching system.
