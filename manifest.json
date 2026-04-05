@@ -1,9 +1,9 @@
 {
   "required_api_version": "^3.0.0",
-  "name": "Raindrop v1.4.0",
+  "name": "Raindrop v1.4.1",
   "description": "Search your Raindrop bookmarks with enhanced caching",
   "developer_name": "Bruno Paz",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "icon": "images/icon.png",
   "options": {
     "query_debounce": 0.2
