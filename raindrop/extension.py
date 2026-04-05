@@ -189,6 +189,38 @@ def get_favicon_path(drop, cache_dir="favicon_cache"):
 logger = logging.getLogger(__name__)
 
 
+def with_timeout(timeout_seconds, default=None):
+    """Decorator to add timeout to function execution"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            import threading
+            import queue
+            
+            result_queue = queue.Queue()
+            
+            def worker():
+                try:
+                    result = func(*args, **kwargs)
+                    result_queue.put(result)
+                except Exception as e:
+                    result_queue.put(e)
+            
+            thread = threading.Thread(target=worker, daemon=True)
+            thread.start()
+            thread.join(timeout=timeout_seconds)
+            
+            if thread.is_alive():
+                logger.warning(f"Function {func.__name__} timed out after {timeout_seconds} seconds")
+                return default
+            
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            return result
+        return wrapper
+    return decorator
+
+
 class RaindropExtension(Extension):
     """ Main Extension Class  """
 
@@ -355,12 +387,17 @@ class RaindropExtension(Extension):
         # Search by tag using Raindrop API
         try:
             from raindropio import Raindrop, CollectionRef
-            drops = Raindrop.search(
-                self.rd_client,
-                tag=tag,
-                perpage=100,
-                collection=CollectionRef({"$id": 0}),
-            )
+            # Apply timeout to API call for better responsiveness
+            def _search_with_timeout():
+                return Raindrop.search(
+                    self.rd_client,
+                    tag=tag,
+                    perpage=100,
+                    collection=CollectionRef({"$id": 0}),
+                )
+            
+            search_func = with_timeout(3)(_search_with_timeout)  # Optimized timeout: 3 seconds
+            drops = search_func()
 
             if len(drops) == 0:
                 return RenderResultListAction([
@@ -415,12 +452,17 @@ class RaindropExtension(Extension):
             self.rd_client = API(access_token)
             self._last_token = access_token
         
-        drops = Raindrop.search(
-            self.rd_client,
-            word=query,
-            perpage=10,
-            collection=CollectionRef({"$id": -1}),
-        )
+        # Apply timeout to API call for better responsiveness
+        def _search_with_timeout():
+            return Raindrop.search(
+                self.rd_client,
+                word=query,
+                perpage=10,
+                collection=CollectionRef({"$id": -1}),
+            )
+        
+        search_func = with_timeout(3)(_search_with_timeout)  # Optimized timeout: 3 seconds
+        drops = search_func()
 
         if len(drops) == 0:
             return RenderResultListAction([
