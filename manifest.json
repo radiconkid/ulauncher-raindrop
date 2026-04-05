@@ -1,8 +1,8 @@
 {
   "api_version": "3.0",
-  "name": "Raindrop v2.0.0",
+  "name": "Raindrop v2.1.0",
   "authors": "Bruno Paz",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "icon": "images/icon.png",
   "instructions": "This extension requires a Raindrop.io account. Create an access token at https://app.raindrop.io/settings/integrations and set it in the extension preferences.",
   "input_debounce": 0.2,

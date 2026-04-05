@@ -1,5 +1,6 @@
 [
   { "required_api_version": "^3.0.0", "commit": "1a843a9" },
+  { "required_api_version": "^3.0.0", "commit": "1a843a9", "version": "2.1.0" },
   { "required_api_version": "^3.0.0", "commit": "1a843a9", "version": "2.0.0" },
   { "required_api_version": "^3.0.0", "commit": "1a843a9", "version": "1.5.0" },
   { "required_api_version": "^3.0.0", "commit": "78d8aec", "version": "1.4.2" },
