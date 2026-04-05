@@ -3,7 +3,7 @@
 > Search in your [Raindrop](https://raindrop.io/) bookmarks directly from [Ulauncher](https://ulauncher.io/).
 
 [![Ulauncher Extension](https://img.shields.io/badge/Ulauncher-Extension-yellowgreen.svg?style=for-the-badge)](https://ext.ulauncher.io/)
-[![Version](https://img.shields.io/badge/Version-2.2.0-blue.svg?style=for-the-badge)](https://github.com/radiconkid/ulauncher-raindrop)
+[![Version](https://img.shields.io/badge/Version-2.3.0-blue.svg?style=for-the-badge)](https://github.com/radiconkid/ulauncher-raindrop)
 [![CI Status](https://img.shields.io/github/workflow/status/radiconkid/ulauncher-raindrop/CI?color=orange&label=actions&logo=github&logoColor=orange&style=for-the-badge)](https://github.com/radiconkid/ulauncher-raindrop)
 [![License](https://img.shields.io/github/license/radiconkid/ulauncher-raindrop.svg?style=for-the-badge)](LICENSE)
 
