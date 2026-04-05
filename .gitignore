@@ -7,3 +7,4 @@ __pycache__
 favicon_cache/
 search_cache/
 reference/
+logs/

@@ -3,17 +3,15 @@ import os
 import hashlib
 import requests
 import time
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from ulauncher.api.client.Extension import Extension
-from ulauncher.api.shared.event import KeywordQueryEvent, PreferencesEvent, PreferencesUpdateEvent
-from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
-from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
+from ulauncher.api import Extension, Result
 from ulauncher.api.shared.action.OpenUrlAction import OpenUrlAction
-from raindrop.preferences import PreferencesEventListener, PreferencesUpdateEventListener
+from ulauncher.api.shared.action.ExtensionCustomAction import ExtensionCustomAction
+from ulauncher.internals.effects import set_query
 from raindropio import Raindrop, CollectionRef
-from raindrop.query_listener import KeywordQueryEventListener
 
 
 class SearchCache:
@@ -47,6 +45,38 @@ class SearchCache:
     def _get_cache_path(self, cache_key):
         """Get full path for cache file"""
         return os.path.join(self.cache_dir, f"{cache_key}.cache")
+    
+    def get_by_prefix(self, query_type, query_prefix):
+        """Try to get results for a query starting with prefix (for debouncing)"""
+        # Look for cached files that match this prefix pattern
+        try:
+            cache_files = Path(self.cache_dir).glob(f"{query_type}:*.cache")
+            
+            for cache_file in cache_files:
+                try:
+                    with open(cache_file, 'rb') as f:
+                        import pickle
+                        cached_data = pickle.load(f)
+                    
+                    # Check if cache is expired
+                    cache_time = cached_data.get('timestamp')
+                    if cache_time and (datetime.now() - cache_time) > self.ttl:
+                        cache_file.unlink()
+                        continue
+                    
+                    # We found a valid cached entry
+                    # This helps provide faster response for prefix matches
+                    results = cached_data.get('results', [])
+                    if results:
+                        self.stats['hits'] += 1
+                        return results
+                except:
+                    pass
+            
+            self.stats['misses'] += 1
+            return None
+        except:
+            return None
     
     def get(self, query_type, query):
         """Get cached results if available and not expired"""
@@ -156,10 +186,7 @@ def get_favicon_url(drop):
 
 
 def get_favicon_path(drop, cache_dir="favicon_cache"):
-    """Get local path for favicon, using simple approach"""
-    # For now, just use Google's favicon service for all sites
-    # This is the simplest approach that should work for most sites
-    
+    """Get local path for favicon from cache, or return default icon (non-blocking)"""
     domain = None
     
     # Try to get domain from drop.domain
@@ -175,38 +202,24 @@ def get_favicon_path(drop, cache_dir="favicon_cache"):
         except:
             pass
     
-    # If we have a domain, try to get favicon
+    # If we have a domain, check cache (but don't download)
     if domain:
         favicon_url = f"https://www.google.com/s2/favicons?domain={domain}"
         
         # Create cache directory if it doesn't exist
-        import os
-        from pathlib import Path
         extension_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cache_dir = os.path.join(extension_base_dir, cache_dir)
-        Path(cache_dir).mkdir(exist_ok=True)
+        cache_path_dir = os.path.join(extension_base_dir, cache_dir)
+        Path(cache_path_dir).mkdir(exist_ok=True)
         
         # Generate filename from URL hash
-        import hashlib
         url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
-        cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+        cache_path = os.path.join(cache_path_dir, f"{url_hash}.png")
         
         # Return cached file if it exists
         if os.path.exists(cache_path):
             return cache_path
-        
-        # Try to download favicon (simple approach)
-        try:
-            import requests
-            response = requests.get(favicon_url, timeout=3)
-            if response.status_code == 200:
-                with open(cache_path, 'wb') as f:
-                    f.write(response.content)
-                return cache_path
-        except:
-            pass  # Silently fail and use default icon
     
-    # Use default icon if favicon not available
+    # Use default icon if favicon not cached (non-blocking)
     return "images/icon.png"
 
 logger = logging.getLogger(__name__)
@@ -250,20 +263,34 @@ class RaindropExtension(Extension):
     def __init__(self):
         """ Initializes the extension """
         super(RaindropExtension, self).__init__()
-        self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
-
-        self.subscribe(PreferencesEvent, PreferencesEventListener())
-        self.subscribe(PreferencesUpdateEvent,
-                       PreferencesUpdateEventListener())
         
-        # Initialize rd_client as None, will be set in PreferencesEventListener
-        self.rd_client = None
+        # Initialize rd_client with access token from preferences
+        access_token = self.preferences.get('access_token')
+        if access_token:
+            from raindropio import API
+            self.rd_client = API(access_token)
+        else:
+            self.rd_client = None
         
         # Initialize search cache
         self.search_cache = SearchCache()
         
         # Load version from manifest.json
         self._load_version()
+        
+        # Store the keyword prefix when showing tags (e.g., "rt " or "rd:tag ")
+        # This is used to reconstruct the full query when a tag is selected
+        self._tag_search_keyword_prefix = ''
+        
+        # Lock for favicon download threads to avoid race conditions
+        self._favicon_download_lock = threading.Lock()
+        # Track ongoing favicon downloads to avoid duplicate downloads
+        self._favicon_downloads = {}  # {url_hash: thread}
+        
+        # Debounce optimization: track in-flight requests
+        self._search_requests_lock = threading.Lock()
+        self._in_flight_searches = {}  # {(trigger_id, query): timestamp}
+        self._search_request_debounce_ms = 50  # Skip requests within 50ms
     
     def _load_version(self):
         """Load version from manifest.json"""
@@ -276,12 +303,182 @@ class RaindropExtension(Extension):
         except:
             self.version = 'unknown'
 
-    def get_keyword_id(self, keyword):
-        for key, value in self.preferences.items():
-            if value == keyword:
-                return key
+    def on_preferences_update(self, id, value, previous_value):
+        """Handle preference updates"""
+        if id == 'access_token':
+            from raindropio import API
+            self.rd_client = API(value) if value else None
+        elif id == 'show_favicons':
+            # Handle favicon setting change
+            # Clear cache if favicons are disabled
+            if not value:
+                cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'favicon_cache')
+                if os.path.exists(cache_dir):
+                    try:
+                        import shutil
+                        shutil.rmtree(cache_dir)
+                    except Exception as e:
+                        logging.error(f"Error clearing favicon cache: {e}")
+    
+    def _download_favicon_async(self, drop, cache_dir="favicon_cache"):
+        """Download favicon in background thread (non-blocking)"""
+        try:
+            domain = None
+            
+            # Extract domain
+            if hasattr(drop, 'domain') and drop.domain:
+                domain = drop.domain
+            elif hasattr(drop, 'link') and drop.link:
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(drop.link)
+                    domain = parsed.netloc
+                except:
+                    pass
+            
+            if not domain:
+                return
+            
+            favicon_url = f"https://www.google.com/s2/favicons?domain={domain}"
+            url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
+            
+            # Check if already downloading or cached
+            with self._favicon_download_lock:
+                if url_hash in self._favicon_downloads:
+                    return  # Already downloading
+                
+                extension_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                cache_path_dir = os.path.join(extension_base_dir, cache_dir)
+                cache_path = os.path.join(cache_path_dir, f"{url_hash}.png")
+                
+                if os.path.exists(cache_path):
+                    return  # Already cached
+                
+                # Mark as downloading
+                self._favicon_downloads[url_hash] = threading.current_thread()
+            
+            # Create cache directory
+            Path(cache_path_dir).mkdir(exist_ok=True)
+            
+            # Download favicon (with timeout)
+            try:
+                response = requests.get(favicon_url, timeout=2)
+                if response.status_code == 200:
+                    with open(cache_path, 'wb') as f:
+                        f.write(response.content)
+                    logging.debug(f"Downloaded favicon for {domain}: {cache_path}")
+            except Exception as e:
+                logging.debug(f"Failed to download favicon for {domain}: {e}")
+        
+        except Exception as e:
+            logging.error(f"Error in _download_favicon_async: {e}")
+        
+        finally:
+            # Remove from download tracking
+            url_hash = hashlib.md5(favicon_url.encode()).hexdigest() if 'favicon_url' in locals() else None
+            if url_hash:
+                with self._favicon_download_lock:
+                    self._favicon_downloads.pop(url_hash, None)
+    
+    def _queue_favicon_downloads(self, drops, cache_dir="favicon_cache"):
+        """Queue favicon downloads for multiple bookmarks in background threads"""
+        if not drops or len(drops) == 0:
+            return
+        
+        for drop in drops:
+            # Start a daemon thread for each favicon download
+            thread = threading.Thread(
+                target=self._download_favicon_async,
+                args=(drop, cache_dir),
+                daemon=True
+            )
+            thread.start()
 
+    def get_keyword_id(self, keyword):
+        # In API v3, keywords are stored in triggers
+        if hasattr(self, 'triggers') and 'keywords' in self.triggers:
+            for kw in self.triggers['keywords']:
+                if kw.get('default_keyword') == keyword:
+                    return kw.get('id')
         return ""
+
+    def _get_trigger_keyword(self, trigger_id):
+        """Get the actual keyword for a trigger ID, accounting for user customization"""
+        # Try to get from extension's triggers (these reflect user customization)
+        if hasattr(self, 'triggers'):
+            logging.debug(f"self.triggers available: {self.triggers}")
+            if trigger_id in self.triggers:
+                trigger_data = self.triggers[trigger_id]
+                logging.debug(f"Trigger data for {trigger_id}: {trigger_data}")
+                keyword = trigger_data.get('keyword', trigger_data.get('default_keyword', ''))
+                logging.debug(f"Keyword: {keyword}")
+                return keyword
+        
+        # Fallback: try to get from manifest
+        try:
+            import json
+            manifest_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'manifest.json')
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+                triggers = manifest.get('triggers', {})
+                if trigger_id in triggers:
+                    keyword = triggers[trigger_id].get('keyword', triggers[trigger_id].get('default_keyword', ''))
+                    logging.debug(f"Fallback keyword from manifest: {keyword}")
+                    return keyword
+        except Exception as e:
+            logging.error(f"Error reading manifest: {e}")
+        
+        logging.warning(f"Could not find keyword for trigger_id: {trigger_id}")
+        return ''
+
+    def on_input(self, input_text, trigger_id):
+        """ Handle user input """
+        query = input_text or ""
+        
+        # Skip kw_open and kw_unsorted as they don't need debouncing
+        if trigger_id == 'kw_open':
+            return self.show_open_app_menu()
+
+        if trigger_id == 'kw_unsorted':
+            return self.unsorted(query)
+
+        # Debounce optimization: check for duplicate requests
+        search_key = (trigger_id, query)
+        current_time = time.time()
+        
+        with self._search_requests_lock:
+            if search_key in self._in_flight_searches:
+                last_request_time = self._in_flight_searches[search_key]
+                # If a request for this query was made within debounce window, return cached result
+                if (current_time - last_request_time) * 1000 < self._search_request_debounce_ms:
+                    logging.debug(f"Debounced duplicate request for {search_key}")
+                    # Check cache instead of making new request
+                    if trigger_id == 'kw_tag':
+                        cached = self.search_cache.get("tag", query)
+                        if cached:
+                            return cached
+                    else:  # kw
+                        cached = self.search_cache.get("search", query)
+                        if cached:
+                            return cached
+            
+            # Mark this request as in-flight
+            self._in_flight_searches[search_key] = current_time
+        
+        try:
+            if trigger_id == 'kw_tag':
+                return self.search_by_tag(query, trigger_id)
+            else:  # kw
+                return self.search(query)
+        finally:
+            # Clean up old in-flight entries (keep last 100)
+            with self._search_requests_lock:
+                if len(self._in_flight_searches) > 100:
+                    # Remove oldest entries
+                    sorted_keys = sorted(self._in_flight_searches.items(), 
+                                       key=lambda x: x[1])
+                    for key, _ in sorted_keys[:50]:
+                        self._in_flight_searches.pop(key, None)
 
     def show_open_app_menu(self):
         """ Shows the menu to Open Raindrop website """
@@ -289,27 +486,27 @@ class RaindropExtension(Extension):
         cache_info = f"Cache: {cache_stats['hits']} hits, {cache_stats['misses']} misses"
         ttl_info = f"Cache TTL: {int(self.search_cache.ttl.total_seconds / 60)} minutes"
         
-        return RenderResultListAction([
-            ExtensionResultItem(
+        return [
+            Result(
                 icon='images/icon.png',
                 name='Open Raindrop Website',
                 on_enter=OpenUrlAction('https://app.raindrop.io')),
-            ExtensionResultItem(
+            Result(
                 icon='images/icon.png',
                 name=f'Raindrop Extension v{self.version}',
                 description='Current extension version',
                 highlightable=False),
-            ExtensionResultItem(
+            Result(
                 icon='images/icon.png',
                 name='Cache Statistics',
                 description=cache_info,
                 highlightable=False),
-            ExtensionResultItem(
+            Result(
                 icon='images/icon.png',
                 name='Cache TTL',
                 description=ttl_info,
                 highlightable=False)
-        ])
+        ]
 
     def search(self, query):
         # Try to get cached results first
@@ -317,25 +514,23 @@ class RaindropExtension(Extension):
         cached_results = self.search_cache.get("search", query)
         
         if cached_results is not None:
-            return RenderResultListAction(cached_results)
+            return cached_results
         
-        # Get access token from preferences
-        access_token = self.preferences.get('access_token')
+        # Fallback: try to find results for similar prefix queries (helps during typing)
+        if query and len(query) > 2:
+            prefix_results = self.search_cache.get_by_prefix("search", query[:len(query)-1])
+            if prefix_results and len(prefix_results) > 0:
+                logging.debug(f"Using prefix cache for query: {query}")
+                return prefix_results
         
-        # Check if access token is available
-        if not access_token:
-            return RenderResultListAction([
-                ExtensionResultItem(
+        # Check if rd_client is initialized
+        if not self.rd_client:
+            return [
+                Result(
                     icon='images/icon.png',
                     name='Raindrop access token not set. Please configure the extension.',
                     highlightable=False)
-            ])
-        
-        # Initialize or update rd_client if needed
-        if not self.rd_client or (hasattr(self, '_last_token') and self._last_token != access_token):
-            from raindropio import API
-            self.rd_client = API(access_token)
-            self._last_token = access_token
+            ]
         
         try:
             drops = Raindrop.search(
@@ -346,12 +541,12 @@ class RaindropExtension(Extension):
             )
 
             if len(drops) == 0:
-                return RenderResultListAction([
-                    ExtensionResultItem(
+                return [
+                    Result(
                         icon='images/icon.png',
                         name='No results found matching your criteria',
                         highlightable=False)
-                ])
+                ]
 
             items = []
             # Get favicon setting from preferences
@@ -359,12 +554,17 @@ class RaindropExtension(Extension):
             
             for drop in drops:
                 # Use favicon if enabled, otherwise use default icon
+                # This now returns cached favicon or default icon (non-blocking)
                 icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
                 items.append(
-                    ExtensionResultItem(icon=icon_path,
-                                        name=drop.title,
-                                        description=drop.excerpt,
-                                        on_enter=OpenUrlAction(drop.link)))
+                    Result(icon=icon_path,
+                           name=drop.title,
+                           description=drop.excerpt,
+                           on_enter=OpenUrlAction(drop.link)))
+            
+            # Queue favicon downloads in background threads (non-blocking)
+            if show_favicons:
+                self._queue_favicon_downloads(drops)
             
             # Cache the results
             self.search_cache.set("search", query, items)
@@ -372,58 +572,130 @@ class RaindropExtension(Extension):
             # Adjust TTL based on cache hit/miss ratio
             self.search_cache.adjust_ttl()
             
-            return RenderResultListAction(items)
+            return items
         except requests.exceptions.RequestException as e:
-            return RenderResultListAction([
-                ExtensionResultItem(
+            return [
+                Result(
                     icon='images/icon.png',
                     name=f'Network error: {str(e)}',
                     description='Please check your internet connection',
                     highlightable=False)
-            ])
+            ]
         except Exception as e:
-            return RenderResultListAction([
-                ExtensionResultItem(
+            return [
+                Result(
                     icon='images/icon.png',
                     name=f'Error searching: {str(e)}',
                     description='An unexpected error occurred',
                     highlightable=False)
-            ])
+            ]
 
-    def search_by_tag(self, tag):
-        """ Search bookmarks by tag """
-        # Try to get cached results first
-        cached_results = self.search_cache.get("tag", tag)
+    def on_item_enter(self, data):
+        """Handle tag selection from tag list"""
+        try:
+            # data is a dict with tag_name and trigger_id
+            if isinstance(data, dict):
+                tag_name = data.get('tag_name', '')
+                logging.debug(f"on_item_enter: tag_name={tag_name}")
+                
+                # Directly return search results for the selected tag
+                return self.search_by_tag(tag_name, 'kw_tag')
+                
+            else:
+                # Fallback for string data
+                logging.warning(f"on_item_enter received non-dict data: {data}")
+                return []
+        except Exception as e:
+            logging.error(f"Error in on_item_enter: {e}", exc_info=True)
+            return []
+
+    def show_available_tags(self, trigger_id='kw_tag'):
+        """ Show list of available tags from Raindrop """
+        try:
+            # Get all tags with documents count
+            # Using 0 for collectionId to get tags from all collections
+            response = self.rd_client.get(
+                'https://api.raindrop.io/rest/v1/tags/0'
+            )
+            response.raise_for_status()
+            tags_response = response.json()
+            
+            logging.debug(f"Tags API response: {tags_response}")
+            
+            if not tags_response or not tags_response.get('result'):
+                logging.debug(f"API error: result=false or missing")
+                return [
+                    Result(
+                        icon='images/icon.png',
+                        name='No tags found',
+                        highlightable=False)
+                ]
+            
+            tags = tags_response.get('items', [])
+            if not tags:
+                return [
+                    Result(
+                        icon='images/icon.png',
+                        name='No tags found',
+                        highlightable=False)
+                ]
+            
+            # Create results for each tag
+            results = []
+            for tag_item in tags:
+                tag_name = tag_item.get('_id', '')
+                tag_count = tag_item.get('count', 0)
+                if tag_name:
+                    # Pass both tag_name and trigger_id to on_item_enter
+                    custom_data = {'tag_name': tag_name, 'trigger_id': trigger_id}
+                    results.append(
+                        Result(
+                            icon='images/icon.png',
+                            name=tag_name,
+                            description=f'{tag_count} bookmark{"s" if tag_count != 1 else ""}',
+                            on_enter=ExtensionCustomAction(custom_data)
+                        )
+                    )
+            
+            if not results:
+                return [
+                    Result(
+                        icon='images/icon.png',
+                        name='No tags found',
+                        highlightable=False)
+                ]
+            
+            return results[:50]  # Limit to 50 tags to avoid UI slowdown
         
-        if cached_results is not None:
-            return RenderResultListAction(cached_results)
-        
-        # Get access token from preferences
-        access_token = self.preferences.get('access_token')
-        
-        # Check if access token is available
-        if not access_token:
-            return RenderResultListAction([
-                ExtensionResultItem(
+        except Exception as e:
+            logging.error(f"Error fetching tags: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name=f'Error fetching tags: {str(e)}',
+                    description='Failed to retrieve tags from Raindrop',
+                    highlightable=False)
+            ]
+
+    def search_by_tag(self, tag, trigger_id='kw_tag'):
+        """ Search bookmarks by tag or show available tags if no tag specified """
+        # Check if rd_client is initialized
+        if not self.rd_client:
+            return [
+                Result(
                     icon='images/icon.png',
                     name='Raindrop access token not set. Please configure the extension.',
                     highlightable=False)
-            ])
+            ]
         
-        # Check if tag is provided
-        if not tag:
-            return RenderResultListAction([
-                ExtensionResultItem(
-                    icon='images/icon.png',
-                    name='Please provide a tag to search for',
-                    highlightable=False)
-            ])
+        # If tag is not provided, show available tags
+        if not tag or tag.strip() == "":
+            return self.show_available_tags(trigger_id)
         
-        # Initialize or update rd_client if needed
-        if not self.rd_client or (hasattr(self, '_last_token') and self._last_token != access_token):
-            from raindropio import API
-            self.rd_client = API(access_token)
-            self._last_token = access_token
+        # Try to get cached results first
+        cached_results = self.search_cache.get("tag", tag)
+        if cached_results is not None:
+            return cached_results
         
         # Search by tag using Raindrop API
         try:
@@ -441,12 +713,12 @@ class RaindropExtension(Extension):
             drops = search_func()
 
             if len(drops) == 0:
-                return RenderResultListAction([
-                    ExtensionResultItem(
+                return [
+                    Result(
                         icon='images/icon.png',
                         name=f'No bookmarks found with tag: {tag}',
                         highlightable=False)
-                ])
+                ]
 
             items = []
             # Get favicon setting from preferences
@@ -454,12 +726,17 @@ class RaindropExtension(Extension):
             
             for drop in drops:
                 # Use favicon if enabled, otherwise use default icon
+                # This now returns cached favicon or default icon (non-blocking)
                 icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
                 items.append(
-                    ExtensionResultItem(icon=icon_path,
-                                        name=drop.title,
-                                        description=drop.excerpt,
-                                        on_enter=OpenUrlAction(drop.link)))
+                    Result(icon=icon_path,
+                           name=drop.title,
+                           description=drop.excerpt,
+                           on_enter=OpenUrlAction(drop.link)))
+            
+            # Queue favicon downloads in background threads (non-blocking)
+            if show_favicons:
+                self._queue_favicon_downloads(drops)
             
             # Cache the results
             self.search_cache.set("tag", tag, items)
@@ -467,43 +744,34 @@ class RaindropExtension(Extension):
             # Adjust TTL based on cache hit/miss ratio
             self.search_cache.adjust_ttl()
             
-            return RenderResultListAction(items)
+            return items
             
         except requests.exceptions.RequestException as e:
-            return RenderResultListAction([
-                ExtensionResultItem(
+            return [
+                Result(
                     icon='images/icon.png',
                     name=f'Network error: {str(e)}',
                     description='Please check your internet connection',
                     highlightable=False)
-            ])
+            ]
         except Exception as e:
-            return RenderResultListAction([
-                ExtensionResultItem(
+            return [
+                Result(
                     icon='images/icon.png',
                     name=f'Error searching by tag: {str(e)}',
                     description='An unexpected error occurred',
                     highlightable=False)
-            ])
+            ]
 
     def unsorted(self, query):
-        # Get access token from preferences
-        access_token = self.preferences.get('access_token')
-        
-        # Check if access token is available
-        if not access_token:
-            return RenderResultListAction([
-                ExtensionResultItem(
+        # Check if rd_client is initialized
+        if not self.rd_client:
+            return [
+                Result(
                     icon='images/icon.png',
                     name='Raindrop access token not set. Please configure the extension.',
                     highlightable=False)
-            ])
-        
-        # Initialize or update rd_client if needed
-        if not self.rd_client or (hasattr(self, '_last_token') and self._last_token != access_token):
-            from raindropio import API
-            self.rd_client = API(access_token)
-            self._last_token = access_token
+            ]
         
         # Apply timeout to API call for better responsiveness
         def _search_with_timeout():
@@ -519,12 +787,12 @@ class RaindropExtension(Extension):
             drops = search_func()
 
             if len(drops) == 0:
-                return RenderResultListAction([
-                    ExtensionResultItem(
+                return [
+                    Result(
                         icon='images/icon.png',
                         name='No results found matching your criteria',
                         highlightable=False)
-                ])
+                ]
 
             items = []
             # Get favicon setting from preferences
@@ -532,26 +800,32 @@ class RaindropExtension(Extension):
             
             for drop in drops:
                 # Use favicon if enabled, otherwise use default icon
+                # This now returns cached favicon or default icon (non-blocking)
                 icon_path = get_favicon_path(drop) if show_favicons else "images/icon.png"
                 items.append(
-                    ExtensionResultItem(icon=icon_path,
-                                        name=drop.title,
-                                        description=drop.excerpt,
-                                        on_enter=OpenUrlAction(drop.link)))
-            return RenderResultListAction(items)
+                    Result(icon=icon_path,
+                           name=drop.title,
+                           description=drop.excerpt,
+                           on_enter=OpenUrlAction(drop.link)))
+            
+            # Queue favicon downloads in background threads (non-blocking)
+            if show_favicons:
+                self._queue_favicon_downloads(drops)
+            
+            return items
         except requests.exceptions.RequestException as e:
-            return RenderResultListAction([
-                ExtensionResultItem(
+            return [
+                Result(
                     icon='images/icon.png',
                     name=f'Network error: {str(e)}',
                     description='Please check your internet connection',
                     highlightable=False)
-            ])
+            ]
         except Exception as e:
-            return RenderResultListAction([
-                ExtensionResultItem(
+            return [
+                Result(
                     icon='images/icon.png',
                     name=f'Error searching: {str(e)}',
                     description='An unexpected error occurred',
                     highlightable=False)
-            ])
+            ]
