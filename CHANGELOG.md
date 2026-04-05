@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2024-04-05
+### Added
+- Increased search results limit from 10 to 100
+- Multiple favicon services with fallback strategy (DuckDuckGo, Google)
+- Improved favicon caching with multi-service cache checking
+
+### Changed
+- Reduced favicon download timeout from 2s to 1s
+- Increased parallel download threads to 20 with staggered start
+
 ## [2.3.0] - 2024-04-05
 ### Added
 - Full debounce optimization implementation

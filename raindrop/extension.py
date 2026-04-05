@@ -204,20 +204,25 @@ def get_favicon_path(drop, cache_dir="favicon_cache"):
     
     # If we have a domain, check cache (but don't download)
     if domain:
-        favicon_url = f"https://www.google.com/s2/favicons?domain={domain}"
-        
         # Create cache directory if it doesn't exist
         extension_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         cache_path_dir = os.path.join(extension_base_dir, cache_dir)
         Path(cache_path_dir).mkdir(exist_ok=True)
         
-        # Generate filename from URL hash
-        url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
-        cache_path = os.path.join(cache_path_dir, f"{url_hash}.png")
+        # Try multiple favicon services in order (check cache for each)
+        favicon_services = [
+            f"https://icons.duckduckgo.com/ip3/{domain}.ico",  # DuckDuckGo (usually fastest)
+            f"https://www.google.com/s2/favicons?domain={domain}",  # Google
+            f"https://www.google.com/s2/favicons?sz=32&domain={domain}",  # Google 32px
+        ]
         
-        # Return cached file if it exists
-        if os.path.exists(cache_path):
-            return cache_path
+        for favicon_url in favicon_services:
+            url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
+            cache_path = os.path.join(cache_path_dir, f"{url_hash}.png")
+            
+            # Return cached file if it exists
+            if os.path.exists(cache_path):
+                return cache_path
     
     # Use default icon if favicon not cached (non-blocking)
     return "images/icon.png"
@@ -291,6 +296,9 @@ class RaindropExtension(Extension):
         self._search_requests_lock = threading.Lock()
         self._in_flight_searches = {}  # {(trigger_id, query): timestamp}
         self._search_request_debounce_ms = 50  # Skip requests within 50ms
+        
+        # Favicon download thread pool (max concurrent downloads)
+        self._favicon_executor = None  # Lazy init if needed
     
     def _load_version(self):
         """Load version from manifest.json"""
@@ -321,7 +329,7 @@ class RaindropExtension(Extension):
                         logging.error(f"Error clearing favicon cache: {e}")
     
     def _download_favicon_async(self, drop, cache_dir="favicon_cache"):
-        """Download favicon in background thread (non-blocking)"""
+        """Download favicon in background thread with multi-service fallback"""
         try:
             domain = None
             
@@ -339,60 +347,86 @@ class RaindropExtension(Extension):
             if not domain:
                 return
             
-            favicon_url = f"https://www.google.com/s2/favicons?domain={domain}"
-            url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
+            # Try multiple favicon services with fallback (fastest first)
+            favicon_services = [
+                f"https://icons.duckduckgo.com/ip3/{domain}.ico",  # DuckDuckGo (usually fastest)
+                f"https://www.google.com/s2/favicons?domain={domain}",  # Google
+                f"https://www.google.com/s2/favicons?sz=32&domain={domain}",  # Google 32px
+            ]
             
-            # Check if already downloading or cached
-            with self._favicon_download_lock:
-                if url_hash in self._favicon_downloads:
-                    return  # Already downloading
-                
-                extension_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                cache_path_dir = os.path.join(extension_base_dir, cache_dir)
-                cache_path = os.path.join(cache_path_dir, f"{url_hash}.png")
-                
-                if os.path.exists(cache_path):
-                    return  # Already cached
-                
-                # Mark as downloading
-                self._favicon_downloads[url_hash] = threading.current_thread()
+            extension_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cache_path_dir = os.path.join(extension_base_dir, cache_dir)
             
-            # Create cache directory
-            Path(cache_path_dir).mkdir(exist_ok=True)
+            # Try to download from one of the services
+            for favicon_url in favicon_services:
+                try:
+                    url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
+                    
+                    # Check if already downloading or cached
+                    with self._favicon_download_lock:
+                        if url_hash in self._favicon_downloads:
+                            return  # Already downloading
+                        
+                        cache_path = os.path.join(cache_path_dir, f"{url_hash}.png")
+                        
+                        if os.path.exists(cache_path):
+                            return  # Already cached
+                        
+                        # Mark as downloading
+                        self._favicon_downloads[url_hash] = threading.current_thread()
+                    
+                    # Create cache directory
+                    Path(cache_path_dir).mkdir(exist_ok=True)
+                    
+                    # Download favicon (with short timeout)
+                    response = requests.get(favicon_url, timeout=1)
+                    if response.status_code == 200 and len(response.content) > 0:
+                        with open(cache_path, 'wb') as f:
+                            f.write(response.content)
+                        logging.debug(f"Downloaded favicon for {domain} from {favicon_url.split('/')[2]}: {cache_path}")
+                        return  # Success!
+                except Exception as e:
+                    logging.debug(f"Failed to download favicon from {favicon_url}: {e}")
+                    continue  # Try next service
+                
+                finally:
+                    # Remove from download tracking for this service
+                    url_hash = hashlib.md5(favicon_url.encode()).hexdigest() if 'favicon_url' in locals() else None
+                    if url_hash:
+                        with self._favicon_download_lock:
+                            self._favicon_downloads.pop(url_hash, None)
             
-            # Download favicon (with timeout)
-            try:
-                response = requests.get(favicon_url, timeout=2)
-                if response.status_code == 200:
-                    with open(cache_path, 'wb') as f:
-                        f.write(response.content)
-                    logging.debug(f"Downloaded favicon for {domain}: {cache_path}")
-            except Exception as e:
-                logging.debug(f"Failed to download favicon for {domain}: {e}")
+            logging.debug(f"Could not download favicon for {domain} from any service")
         
         except Exception as e:
             logging.error(f"Error in _download_favicon_async: {e}")
-        
-        finally:
-            # Remove from download tracking
-            url_hash = hashlib.md5(favicon_url.encode()).hexdigest() if 'favicon_url' in locals() else None
-            if url_hash:
-                with self._favicon_download_lock:
-                    self._favicon_downloads.pop(url_hash, None)
     
     def _queue_favicon_downloads(self, drops, cache_dir="favicon_cache"):
         """Queue favicon downloads for multiple bookmarks in background threads"""
         if not drops or len(drops) == 0:
             return
         
-        for drop in drops:
-            # Start a daemon thread for each favicon download
-            thread = threading.Thread(
-                target=self._download_favicon_async,
-                args=(drop, cache_dir),
-                daemon=True
-            )
-            thread.start()
+        # Start download threads for all bookmarks (max 20 concurrent)
+        max_threads = min(20, len(drops))
+        for i, drop in enumerate(drops):
+            # Stagger thread creation slightly to avoid thundering herd
+            if i < max_threads:
+                thread = threading.Thread(
+                    target=self._download_favicon_async,
+                    args=(drop, cache_dir),
+                    daemon=True
+                )
+                thread.start()
+            else:
+                # For remaining items, start after a small delay
+                thread = threading.Thread(
+                    target=lambda d=drop, cd=cache_dir: (
+                        time.sleep(0.01),
+                        self._download_favicon_async(d, cd)
+                    ),
+                    daemon=True
+                )
+                thread.start()
 
     def get_keyword_id(self, keyword):
         # In API v3, keywords are stored in triggers
@@ -536,7 +570,7 @@ class RaindropExtension(Extension):
             drops = Raindrop.search(
                 self.rd_client,
                 word=query,
-                perpage=10,
+                perpage=100,
                 collection=CollectionRef({"$id": 0}),
             )
 
@@ -778,7 +812,7 @@ class RaindropExtension(Extension):
             return Raindrop.search(
                 self.rd_client,
                 word=query,
-                perpage=10,
+                perpage=100,
                 collection=CollectionRef({"$id": -1}),
             )
         
