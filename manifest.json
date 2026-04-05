@@ -1,38 +1,30 @@
 {
-  "required_api_version": "^3.0.0",
-  "name": "Raindrop v1.5.0",
-  "description": "Search your Raindrop bookmarks with enhanced caching and error handling",
-  "developer_name": "Bruno Paz",
-  "version": "1.5.0",
+  "api_version": "3.0",
+  "name": "Raindrop v2.0.0",
+  "authors": "Bruno Paz",
+  "version": "2.0.0",
   "icon": "images/icon.png",
-  "options": {
-    "query_debounce": 0.2
+  "instructions": "This extension requires a Raindrop.io account. Create an access token at https://app.raindrop.io/settings/integrations and set it in the extension preferences.",
+  "input_debounce": 0.2,
+  "triggers": {
+    "kw_open": {
+      "name": "Raindrop: Open In browser",
+      "default_keyword": "rdopen"
+    },
+    "kw_unsorted": {
+      "name": "Raindrop: Unsorted",
+      "default_keyword": "rd:unsorted"
+    },
+    "kw_tag": {
+      "name": "Raindrop: Search by Tag",
+      "default_keyword": "rd:tag"
+    },
+    "kw": {
+      "name": "Raindrop: Search",
+      "default_keyword": "rd"
+    }
   },
   "preferences": [
-    {
-      "id": "kw_open",
-      "type": "keyword",
-      "name": "Raindrop: Open In browser",
-      "default_value": "rdopen"
-    },
-    {
-      "id": "kw_unsorted",
-      "type": "keyword",
-      "name": "Raindrop: Unsorted",
-      "default_value": "rd:unsorted"
-    },
-    {
-      "id": "kw_tag",
-      "type": "keyword",
-      "name": "Raindrop: Search by Tag",
-      "default_value": "rd:tag"
-    },
-    {
-      "id": "kw",
-      "type": "keyword",
-      "name": "Raindrop: Search",
-      "default_value": "rd"
-    },
     {
       "id": "access_token",
       "type": "input",

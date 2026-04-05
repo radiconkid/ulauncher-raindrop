@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2024-04-05
+### Added
+- Tag selection feature implementation
+- Custom keyword support trial and adjustment
+
+### Changed
+- API v2 → v3 migration
+- Removed `tag_keyword` preference from manifest.json
+- Removed `tag_keyword` reference from `on_input` method
+- Added and removed `_tag_search_keyword_prefix` variable
+- Implemented `on_item_enter` method for direct search result return
+
+### Removed
+- Query update feature (experimental)
+
 ## [1.5.0] - 2024-04-05
 ### Added
 - Enhanced caching system with dynamic TTL adjustment based on cache hit/miss ratio.
