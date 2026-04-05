@@ -87,8 +87,20 @@ style="height: auto !important;width: auto !important;" ></a>
 ---
 ## Changelog
 
+### v1.4.0
+- **Major Performance Enhancement**: Completely rewritten caching system
+- **Two-Tier Cache**: Memory cache (fast access) + Disk cache (persistent storage)
+- **LRU Eviction Policy**: Automatically removes least recently used items when cache is full
+- **Extended Cache TTL**: Increased from 5 minutes to 30 minutes for better performance
+- **Enhanced Error Handling**: Better timeout management and retry logic for API calls
+- **Thread-Safe Implementation**: Fixed deadlock issues in cache management
+- **Improved User Experience**: Cache statistics now visible in extension menu
+- **Fallback Mechanism**: Shows similar cached results when API is unavailable
+- **Optimized Timeouts**: API calls now timeout after 5-8 seconds instead of hanging indefinitely
+- **Memory Management**: Better control over memory usage with configurable cache size (150 items)
+
 ### v1.3.5
-- Added search result caching for improved performance
+- Added basic search result caching for improved performance
 - Reduced API requests by caching search and tag search results
 - Cache expires after 5 minutes for fresh data
 - Significant performance improvement for repeated searches
