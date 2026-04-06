@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-04-06
+### Fixed
+- Fixed favicon download tracking bug in `_download_favicon_async` method
+- Improved `finally` block handling to properly clean up download state for each favicon service
+- Resolved issue where favicons would intermittently fail to display due to improper mutex tracking
+
 ## [2.4.0] - 2024-04-05
 ### Added
 - Increased search results limit from 10 to 100

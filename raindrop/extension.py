@@ -359,6 +359,7 @@ class RaindropExtension(Extension):
             
             # Try to download from one of the services
             for favicon_url in favicon_services:
+                url_hash = None
                 try:
                     url_hash = hashlib.md5(favicon_url.encode()).hexdigest()
                     
@@ -391,7 +392,6 @@ class RaindropExtension(Extension):
                 
                 finally:
                     # Remove from download tracking for this service
-                    url_hash = hashlib.md5(favicon_url.encode()).hexdigest() if 'favicon_url' in locals() else None
                     if url_hash:
                         with self._favicon_download_lock:
                             self._favicon_downloads.pop(url_hash, None)
