@@ -6,6 +6,8 @@ import time
 import threading
 from pathlib import Path
 from datetime import datetime, timedelta
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from ulauncher.api import Extension, Result
 from ulauncher.api.shared.action.OpenUrlAction import OpenUrlAction
@@ -13,6 +15,21 @@ from ulauncher.api.shared.action.ExtensionCustomAction import ExtensionCustomAct
 from ulauncher.internals.effects import set_query
 from raindropio import Raindrop, CollectionRef
 
+
+def create_retry_session(retries=3, backoff_factor=0.5, 
+                        status_forcelist=(500, 502, 504, 107)):
+    """Create a requests Session with retry strategy"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+        allowed_methods=["GET", "POST"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 class SearchCache:
     """Cache class for storing search results with enhanced features"""
@@ -380,12 +397,19 @@ class RaindropExtension(Extension):
                     Path(cache_path_dir).mkdir(exist_ok=True)
                     
                     # Download favicon (with short timeout)
-                    response = requests.get(favicon_url, timeout=1)
-                    if response.status_code == 200 and len(response.content) > 0:
-                        with open(cache_path, 'wb') as f:
-                            f.write(response.content)
-                        logging.debug(f"Downloaded favicon for {domain} from {favicon_url.split('/')[2]}: {cache_path}")
-                        return  # Success!
+                    try:
+                        response = requests.get(favicon_url, timeout=1)
+                        if response.status_code == 200 and len(response.content) > 0:
+                            with open(cache_path, 'wb') as f:
+                                f.write(response.content)
+                            logging.debug(f"Downloaded favicon for {domain} from {favicon_url.split('/')[2]}: {cache_path}")
+                            return  # Success!
+                    except requests.exceptions.Timeout:
+                        logging.debug(f"Timeout downloading favicon from {favicon_url}")
+                        continue
+                    except requests.exceptions.ConnectionError:
+                        logging.debug(f"Connection error downloading favicon from {favicon_url}")
+                        continue
                 except Exception as e:
                     logging.debug(f"Failed to download favicon from {favicon_url}: {e}")
                     continue  # Try next service
@@ -607,22 +631,43 @@ class RaindropExtension(Extension):
             self.search_cache.adjust_ttl()
             
             return items
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Connection error during search: {e}", exc_info=True)
             return [
                 Result(
                     icon='images/icon.png',
-                    name=f'Network error: {str(e)}',
+                    name='Connection error: Unable to reach Raindrop',
+                    description='Please check your internet connection and try again',
+                    highlightable=False)
+            ]
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout error during search: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name='Request timeout',
+                    description='Raindrop API is taking too long to respond',
+                    highlightable=False)
+            ]
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Network error during search: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name=f'Network error: {type(e).__name__}',
                     description='Please check your internet connection',
                     highlightable=False)
             ]
         except Exception as e:
+            logging.error(f"Error searching: {e}", exc_info=True)
             return [
                 Result(
                     icon='images/icon.png',
-                    name=f'Error searching: {str(e)}',
+                    name=f'Error searching: {type(e).__name__}',
                     description='An unexpected error occurred',
                     highlightable=False)
             ]
+
 
     def on_item_enter(self, data):
         """Handle tag selection from tag list"""
@@ -701,15 +746,43 @@ class RaindropExtension(Extension):
             
             return results[:50]  # Limit to 50 tags to avoid UI slowdown
         
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Connection error fetching tags: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name='Connection error: Unable to reach Raindrop',
+                    description='Please check your internet connection',
+                    highlightable=False)
+            ]
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout error fetching tags: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name='Request timeout',
+                    description='Raindrop API is taking too long to respond',
+                    highlightable=False)
+            ]
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Network error fetching tags: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name=f'Network error: {type(e).__name__}',
+                    description='Please check your internet connection',
+                    highlightable=False)
+            ]
         except Exception as e:
             logging.error(f"Error fetching tags: {e}", exc_info=True)
             return [
                 Result(
                     icon='images/icon.png',
-                    name=f'Error fetching tags: {str(e)}',
+                    name=f'Error fetching tags: {type(e).__name__}',
                     description='Failed to retrieve tags from Raindrop',
                     highlightable=False)
             ]
+
 
     def search_by_tag(self, tag, trigger_id='kw_tag'):
         """ Search bookmarks by tag or show available tags if no tag specified """
@@ -780,22 +853,43 @@ class RaindropExtension(Extension):
             
             return items
             
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Connection error during tag search: {e}", exc_info=True)
             return [
                 Result(
                     icon='images/icon.png',
-                    name=f'Network error: {str(e)}',
+                    name='Connection error: Unable to reach Raindrop',
+                    description='Please check your internet connection and try again',
+                    highlightable=False)
+            ]
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout error during tag search: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name='Request timeout',
+                    description='Raindrop API is taking too long to respond',
+                    highlightable=False)
+            ]
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Network error during tag search: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name=f'Network error: {type(e).__name__}',
                     description='Please check your internet connection',
                     highlightable=False)
             ]
         except Exception as e:
+            logging.error(f"Error searching by tag: {e}", exc_info=True)
             return [
                 Result(
                     icon='images/icon.png',
-                    name=f'Error searching by tag: {str(e)}',
+                    name=f'Error searching by tag: {type(e).__name__}',
                     description='An unexpected error occurred',
                     highlightable=False)
             ]
+
 
     def unsorted(self, query):
         # Check if rd_client is initialized
@@ -847,19 +941,39 @@ class RaindropExtension(Extension):
                 self._queue_favicon_downloads(drops)
             
             return items
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Connection error during unsorted search: {e}", exc_info=True)
             return [
                 Result(
                     icon='images/icon.png',
-                    name=f'Network error: {str(e)}',
+                    name='Connection error: Unable to reach Raindrop',
+                    description='Please check your internet connection and try again',
+                    highlightable=False)
+            ]
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout error during unsorted search: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name='Request timeout',
+                    description='Raindrop API is taking too long to respond',
+                    highlightable=False)
+            ]
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Network error during unsorted search: {e}", exc_info=True)
+            return [
+                Result(
+                    icon='images/icon.png',
+                    name=f'Network error: {type(e).__name__}',
                     description='Please check your internet connection',
                     highlightable=False)
             ]
         except Exception as e:
+            logging.error(f"Error searching unsorted: {e}", exc_info=True)
             return [
                 Result(
                     icon='images/icon.png',
-                    name=f'Error searching: {str(e)}',
+                    name=f'Error searching: {type(e).__name__}',
                     description='An unexpected error occurred',
                     highlightable=False)
             ]
